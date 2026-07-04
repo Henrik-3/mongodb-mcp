@@ -1,44 +1,44 @@
 {
-	"name": "@henrik3/mongodb-mcp-server",
-	"version": "0.1.0",
-	"description": "A simple MongoDB MCP server for querying and managing MongoDB databases.",
-	"type": "module",
-	"packageManager": "bun@1.3.14",
-	"bin": {
-		"mongodb-mcp": "./dist/index.js"
-	},
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
-	"scripts": {
-		"build": "tsc",
-		"dev": "bun src/index.ts",
-		"start": "node dist/index.js",
-		"prepack": "bun run build"
-	},
-	"keywords": [
-		"mcp",
-		"model-context-protocol",
-		"mongodb",
-		"database"
-	],
-	"publishConfig": {
-		"access": "public"
-	},
-	"author": "",
-	"license": "MIT",
-	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.13.0",
-		"mongodb": "^6.16.0",
-		"zod": "^3.25.0"
-	},
-	"devDependencies": {
-		"@types/node": "^22.15.0",
-		"typescript": "^5.8.0"
-	},
-	"engines": {
-		"node": ">=20"
-	}
+    "name": "@henrik3/mongodb-mcp-server",
+    "version": "0.2.0",
+    "description": "A simple MongoDB MCP server for querying and managing MongoDB databases.",
+    "type": "module",
+    "packageManager": "bun@1.3.14",
+    "bin": {
+        "mongodb-mcp": "./dist/index.js"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "dev": "bun src/index.ts",
+        "start": "node dist/index.js",
+        "prepack": "bun run build"
+    },
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "mongodb",
+        "database"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.13.0",
+        "mongodb": "^6.16.0",
+        "zod": "^3.25.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.15.0",
+        "typescript": "^5.8.0"
+    },
+    "engines": {
+        "node": ">=20"
+    }
 }

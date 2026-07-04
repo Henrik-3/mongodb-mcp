@@ -1,6 +1,11 @@
 # MongoDB MCP Server
 
-A small, packable Model Context Protocol server for MongoDB. It runs over stdio, connects with the official MongoDB Node.js driver, and exposes practical tools for inspecting databases, querying documents, running aggregations, and optionally performing writes.
+A small, packable Model Context Protocol server for MongoDB. It connects with the official MongoDB Node.js driver and exposes practical tools for inspecting databases, querying documents, running aggregations, and optionally performing writes.
+
+It supports two transports:
+
+- **stdio** (default) — for local MCP clients that spawn the server as a child process.
+- **HTTP Streamable** — for remote or web-based clients using the MCP Streamable HTTP transport specification.
 
 Writes are disabled by default.
 
@@ -31,6 +36,12 @@ For local development:
 bun run dev
 ```
 
+Run with the HTTP Streamable transport:
+
+```bash
+MONGODB_URI="mongodb://localhost:27017" MCP_TRANSPORT=http bun run dev
+```
+
 For packaging:
 
 ```bash
@@ -49,6 +60,46 @@ Set these environment variables in your MCP client configuration.
 | `MONGODB_DEFAULT_DB` | No | | Database used when a tool omits `database`. |
 | `MONGODB_MCP_READ_ONLY` | No | `true` | Set to `false` to enable write tools. |
 | `MONGODB_MCP_MAX_LIMIT` | No | `100` | Maximum number of documents returned by `find`. |
+| `MCP_TRANSPORT` | No | `stdio` | Transport to use: `stdio` or `http`. |
+| `MCP_HTTP_HOST` | No | `127.0.0.1` | Host to bind the HTTP Streamable server to. |
+| `MCP_HTTP_PORT` | No | `3000` | Port for the HTTP Streamable server. |
+
+## Transports
+
+### stdio (default)
+
+Spawn the server as a child process from your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "mongodb": {
+      "command": "node",
+      "args": ["C:/path/to/mongodb-mcp/dist/index.js"],
+      "env": {
+        "MONGODB_URI": "mongodb://localhost:27017",
+        "MONGODB_DEFAULT_DB": "my_database"
+      }
+    }
+  }
+}
+```
+
+### HTTP Streamable
+
+Run the server with `MCP_TRANSPORT=http`. It exposes a single MCP endpoint at the server root (`/`) and manages sessions in-memory per `mcp-session-id`:
+
+```bash
+MONGODB_URI="mongodb://localhost:27017" \
+MCP_TRANSPORT=http \
+MCP_HTTP_HOST=127.0.0.1 \
+MCP_HTTP_PORT=3000 \
+node dist/index.js
+```
+
+Connect a Streamable HTTP MCP client to `http://127.0.0.1:3000/`.
+
+Sessions are stateful: the server generates a session id on `initialize` and validates it on subsequent requests. Bind to `0.0.0.0` with care and place it behind an authenticated reverse proxy when exposing it remotely.
 
 ## Example Client Config
 

@@ -2,8 +2,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { MongoClient, type Document, type IndexSpecification } from "mongodb";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 const uri = process.env.MONGODB_URI;
 
@@ -15,14 +18,10 @@ if (!uri) {
 const defaultDatabase = process.env.MONGODB_DEFAULT_DB;
 const readOnly = process.env.MONGODB_MCP_READ_ONLY !== "false";
 const maxLimit = parsePositiveInteger(process.env.MONGODB_MCP_MAX_LIMIT, 100);
+const transportMode = (process.env.MCP_TRANSPORT ?? "stdio").toLowerCase();
 
 const client = new MongoClient(uri, {
   appName: "mongodb-mcp"
-});
-
-const server = new McpServer({
-  name: "mongodb-mcp",
-  version: "0.1.0"
 });
 
 const databaseSchema = z
@@ -97,8 +96,14 @@ function assertReadOnlyAggregation(pipeline: Record<string, unknown>[]) {
   }
 }
 
-server.registerTool(
-  "mongodb_ping",
+function createMcpServer(): McpServer {
+  const server = new McpServer({
+    name: "mongodb-mcp",
+    version: "0.1.0"
+  });
+
+  server.registerTool(
+    "mongodb_ping",
   {
     title: "Ping MongoDB",
     description: "Verify the MongoDB connection and return server configuration flags.",
@@ -361,11 +366,118 @@ server.registerTool(
   }
 );
 
-async function main() {
+  return server;
+}
+
+async function runStdio() {
   await client.connect();
 
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await createMcpServer().connect(transport);
+}
+
+interface SessionEntry {
+  transport: StreamableHTTPServerTransport;
+  server: McpServer;
+}
+
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function isInitializeRequest(body: unknown): boolean {
+  if (!body || typeof body !== "object") {
+    return false;
+  }
+
+  const value = body as { method?: unknown };
+  return value.method === "initialize";
+}
+
+async function runHttp() {
+  await client.connect();
+
+  const host = process.env.MCP_HTTP_HOST ?? "127.0.0.1";
+  const port = parsePositiveInteger(process.env.MCP_HTTP_PORT ?? "3000", 3000);
+  const sessions = new Map<string, SessionEntry>();
+
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+      const sessionId = req.headers["mcp-session-id"];
+      const existing = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+
+      if (existing) {
+        await existing.transport.handleRequest(req, res);
+        return;
+      }
+
+      if (req.method !== "POST") {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "No valid session. Send an initialize request first." }, id: null }));
+        return;
+      }
+
+      const rawBody = await readRequestBody(req);
+      let parsedBody: unknown;
+      try {
+        parsedBody = rawBody ? JSON.parse(rawBody) : undefined;
+      } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error: invalid JSON." }, id: null }));
+        return;
+      }
+
+      if (!isInitializeRequest(parsedBody)) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "No valid session. Send an initialize request first." }, id: null }));
+        return;
+      }
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, { transport, server });
+        },
+        onsessionclosed: (id) => {
+          sessions.delete(id);
+        }
+      });
+
+      const server = createMcpServer();
+      await server.connect(transport);
+      await transport.handleRequest(req, res, parsedBody);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message }, id: null }));
+      } else {
+        res.end();
+      }
+    }
+  });
+
+  httpServer.listen(port, host, () => {
+    console.error(`MongoDB MCP (HTTP Streamable) listening on http://${host}:${port}/`);
+  });
+
+  return httpServer;
+}
+
+async function main() {
+  if (transportMode === "http" || transportMode === "streamable-http") {
+    await runHttp();
+  } else if (transportMode === "stdio") {
+    await runStdio();
+  } else {
+    console.error(`Unknown MCP_TRANSPORT value "${transportMode}". Use "stdio" or "http".`);
+    process.exit(1);
+  }
 }
 
 process.on("SIGINT", async () => {
